@@ -1,4 +1,6 @@
 
+checkout this with "git clone --recursive"
+
 
 place a bootable bootx64.efi in prebuilt/, you can find one here: http://forum.xda-developers.com/thinkpad-tablet/general/yoga-tab-2-unlocking-daaa-deee-daaa-dooo-t3241260
 
