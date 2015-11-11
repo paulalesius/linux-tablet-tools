@@ -1,0 +1,6 @@
+[submodule "external/mkbootimg.git"]
+	path = external/mkbootimg.git
+	url = https://github.com/ModdingMyMind/mkbootimg_tools.git
+[submodule "external/kernel-devel.git"]
+	path = external/kernel-devel.git
+	url = http://git.kernel.org/pub/scm/linux/kernel/git/stable/linux-stable.git

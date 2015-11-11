@@ -1,0 +1,273 @@
+#!/bin/sh
+
+export DRACUT_SYSTEMD=1
+if [ -f /dracut-state.sh ]; then
+    . /dracut-state.sh 2>/dev/null
+fi
+type getarg >/dev/null 2>&1 || . /lib/dracut-lib.sh
+source_conf /etc/conf.d
+type plymouth >/dev/null 2>&1 && plymouth quit
+export _rdshell_name="dracut" action="Boot" hook="emergency"
+source_hook "$hook"
+
+export PATH=/usr/bin:/usr/sbin:$PATH
+export BYTES_PER_MB=1048576
+
+setterm -powersave off -blank 0
+
+function log() {
+	echo "-> $1"
+}
+
+function printBanner() {
+
+	log '   __ _                    _____      _     _      _     _____            _     '
+	log '  / /(_)_ __  _   ___  __ /__   \__ _| |__ | | ___| |_  /__   \___   ___ | |___ '
+	log ' / / | | '\''_ \| | | \ \/ /   / /\/ _` | '\''_ \| |/ _ \ __|   / /\/ _ \ / _ \| / __|'
+	log '/ /__| | | | | |_| |>  <   / / | (_| | |_) | |  __/ |_   / / | (_) | (_) | \__ \'
+	log '\____/_|_| |_|\__,_/_/\_\  \/   \__,_|_.__/|_|\___|\__|  \/   \___/ \___/|_|___/'
+	log ''
+	log ' v.0.6                                                          by cocacola2015 '
+	log ''
+	log ''
+}
+
+function getFreeSpaceBytes() {
+	mkdir /mnt
+	mount $1 /mnt 1> /dev/null 2> /dev/null
+	FREEBYTES=$(df -B1 | grep /mnt | awk '{print $4}')
+	umount /mnt 1> /dev/null 2> /dev/null
+	echo $FREEBYTES
+}
+
+# Not used, too error prone
+function createFspart() {
+	local START_SECTOR=$1
+	local END_SECTOR=$2
+	local START_SECTOR_EXPECT=$3
+	local END_SECTOR_EXPECT=$4
+	local DATA_PARTITION_PATH=$5
+	local DATA_PARTITION_NUMBER=$6
+	local NEW_PARTITION_GIGABYTES_IN_SECTORS=$7
+	local NEW_PARTITION_NAME=$8
+
+	local NEW_PARTITION_STARTSAT_SECTOR=$[$END_SECTOR_EXPECT-$NEW_PARTITION_GIGABYTES_IN_SECTORS]
+
+	if [[ "$START_SECTOR" -eq "$START_SECTOR_EXPECT" && "$END_SECTOR" -eq "$END_SECTOR_EXPECT" ]]; then
+		
+	        log "Data partition verified, proceeding with resize operation"
+	        fsck -a $DATA_PARTITION_PATH 1> /dev/null
+	
+	        log "Removing journal from mmcblk0p14"
+	        tune2fs -O ^has_journal $DATA_PARTITION_PATH 1> /dev/null
+	        sync
+	
+	        log "Removing data partition"
+	        #sgdisk -d $DATA_PARTITION_NUMBER /dev/mmcblk0
+		
+		log "Re-creating data partition"		
+	        #sgdisk --new=$DATA_PARTITION_NUMBER:$START_SECTOR_EXPECT:$[$NEW_PARTITION_STARTSAT_SECTOR-1] /dev/mmcblk0
+		log "Set name of data partition"
+	        #sgdisk --change-name=$DATA_PARTITION_NUMBER:data /dev/mmcblk0
+	
+	        log "Partprobe"
+	        partprobe $DATA_PARTITION_PATH 1> /dev/null
+	
+	        # Defaults to size of partition if no size specified
+	        log "Checking data partition"
+	        e2fsck -f -p $DATA_PARTITION_PATH 1> /dev/null
+		log "Resizing filesystem on data partition"
+	        resize2fs $DATA_PARTITION_PATH 1> /dev/null
+		log "Checking data partition"
+		e2fsck -f -p $DATA_PARTITION_PATH 1> /dev/null
+	        log "Re-adding journal to mmcblk0p14"
+	        tune2fs -j $DATA_PARTITION_PATH 1> /dev/null
+
+		# CREATE NEW PARTITION HERE SO IT DOESNT OVERWRITE DATA BEFORE RESIZING THAT
+		log "Creating new freespace partition at sector $NEW_PARTITION_STARTSAT_SECTOR to $END_SECTOR_EXPECT"
+		#sgdisk --new=15:$NEW_PARTITION_STARTSAT_SECTOR:$END_SECTOR_EXPECT
+	
+		log "Set name of new data partition"
+		# sgdisk --change-name=15:newname...
+
+		log "Creating filesystem on new partition"
+		# mkfs.ext4 -L 
+	
+	        sync
+	        log "Success!! You can now safely reboot the system"
+		log ''
+		log ''
+
+		gdisk -l /dev/mmcblk0
+	else
+	        log "Verification of $DATA_PARTITION_PATH failed, expected partition scheme not found"
+	        log "Aborting, no modifications have been performed"
+	fi
+}
+
+if getargbool 1 rd.shell -d -y rdshell || getarg rd.break -d rdbreak; then
+  
+	[ -f /etc/profile ] && . /etc/profile
+	[ -z "$PS1" ] && export PS1="$_name:\${PWD}# "
+	#########################
+	clear	
+
+	printBanner
+	
+	#
+	# Profiles, these will match the expected default of the unformatted tablet
+	# For 1380 tablet; are the other tablets the same?
+	#
+	START_SECTOR_EXPECT=6580264
+	END_SECTOR_EXPECT=61054975
+	NEW_PARTITION_GIGABYTES=10
+
+	#
+	# Definitions, values must be dividable
+	#
+	SECTOR_SIZE=512
+	SECTORS_PER_MB=$[$BYTES_PER_MB/$SECTOR_SIZE]
+	NEW_PARTITION_GIGABYTES_IN_BYTES=$[$NEW_PARTITION_GIGABYTES*1000*$BYTES_PER_MB]
+	NEW_PARTITION_GIGABYTES_IN_SECTORS=$[$NEW_PARTITION_GIGABYTES_IN_BYTES/$SECTOR_SIZE]
+
+	DISK_PATH="/dev/mmcblk0"
+
+        DATA_PARTITION_NUMBER=14
+        DATA_PARTITION_PATH="/dev/mmcblk0p14"
+	DATA_PARTITION_NAME="data"
+	DATA_PARTITION_START_SECTOR=$(gdisk -l $DISK_PATH | egrep -e '14.*data' | awk '{print $2}')
+	DATA_PARTITION_END_SECTOR=$(gdisk -l $DISK_PATH | egrep -e '14.*data' | awk '{print $3}')
+	DATA_PARTITION_END_SECTOR_NEW=$[$DATA_PARTITION_END_SECTOR-$NEW_PARTITION_GIGABYTES_IN_SECTORS-1]
+	DATA_PARTITION_FREE_BYTES=$(getFreeSpaceBytes $DATA_PARTITION_PATH)
+
+        NEW_PARTITION_NUMBER=15
+        NEW_PARTITION_PATH="/dev/mmcblk0p15"
+	NEW_PARTITION_NAME="fspart"
+
+############################################################# Main code, above is mainly junk, but some variables can still be used, and are
+
+
+
+
+	# Provided by kernel
+	LTTCMD=$(getarg "verify" lttcmd)
+
+
+	mount $DATA_PARTITION_PATH /mnt
+	if [ "$LTTCMD" == "diagnostics" ]; then
+		log "/mnt contains:"
+		ls -l /mnt
+		if [[ -d /mnt/android_data/ ]]; then
+			mount --bind /proc /mnt/proc
+			mount --bind /dev  /mnt/dev
+			mount --bind /sys  /mnt/sys
+
+			DIAGNOSTICS_PATH=/mnt/android_data/media/0/diagnostics/
+			mkdir $DIAGNOSTICS_PATH
+			chroot /mnt /usr/sbin/lshw > $DIAGNOSTICS_PATH/lshw.txt
+			chroot /mnt /usr/bin/dmesg > $DIAGNOSTICS_PATH/dmesg.txt
+			chroot /mnt /usr/sbin/lspci -vvvv > $DIAGNOSTICS_PATH/lspci_verbose.txt
+			chroot /mnt /usr/sbin/lspci > $DIAGNOSTICS_PATH/lspci.txt
+			chroot /mnt /usr/bin/cat /var/log/messages > $DIAGNOSTICS_PATH/messages.txt
+			chroot /mnt /usr/sbin/lsmod > $DIAGNOSTICS_PATH/lsmod.txt
+			chroot /mnt /usr/bin/lsusb -vvvv > $DIAGNOSTICS_PATH/lsusb.txt
+			chroot /mnt cat /proc/bus/input/devices > $DIAGNOSTICS_PATH/proc_bus_input_devices.txt
+			ls -l $DIAGNOSTICS_PATH
+
+			umount /mnt/proc
+			umount /mnt/dev
+			umount /mnt/sys
+		else
+			log "Not performing diagnostics, maybe linux isn't installed.."
+		fi
+
+	elif [ "$LTTCMD" == "verify" ]; then
+		
+		echo "/mnt"
+		ls /mnt
+		echo "/mnt/android_data"
+		ls /mnt/android_data
+		tar -h
+		ls /mnt/android_data/media/0/rootfs.tar.gz
+
+	elif [ "$LTTCMD" == "install" ]; then
+
+		ROOTFS_RELPATH=media/0/rootfs.tar.gz
+		ROOTFS_ARCHIVE="/mnt/"$ROOTFS_RELPATH
+		DATA_BACKUP_DIRECTORY=/mnt/android_data
+		
+		if [[ -d $DATA_BACKUP_DIRECTORY ]]; then
+			log "Data backup archive exists already, indicating that a linux installation is present"
+			log "Aborting installation; no changes performed"
+		elif [[ ! -f $ROOTFS_ARCHIVE ]]; then
+			log "Expected rootfs.tar.gz not found on the android data partition"
+			log "Please reboot, connect your tablet to your computer, and copy a valid rootfs.tar.gz archive into the android device"
+		else
+			#
+			log "Backing up old data partition content"
+			mkdir $DATA_BACKUP_DIRECTORY
+			mv /mnt/* "$DATA_BACKUP_DIRECTORY""/"
+			
+			#
+			log "Installaing rootfs.tar.gz archive, this can take many minutes, please be patient"
+			tar --checkpoint=10000 -xf "$DATA_BACKUP_DIRECTORY/$ROOTFS_RELPATH" -C /mnt/
+
+			#
+			echo -e "\n/dev/mmcblk0p14 / ext4 defaults,noatime,nodiratime 0 0\n" > /mnt/etc/fstab
+			log "Modified fstab"
+
+			#
+			#rm "$DATA_BACKUP_DIRECTORY/$ROOTFS_RELPATH"
+			#log "Deleted rootfs archive"
+			sync
+
+			#
+			log "Contents of data partition:"
+			ls -lh /mnt
+
+			#
+			log "Installation complete, you may not safely reboot the system"
+		fi
+
+	elif [ "$LTTCMD" == "uninstall" ]; then
+
+		# Obs, this doesn't handle hidden "." files in the mnt directory, but we can ignore them for now
+
+		# Remove everything that is not the android_data directory
+		if [[ -d /mnt/android_data ]]; then
+			log "Removing linux installation"
+                	for i in $(ls /mnt); do
+                	        if [[ "$i" != "android_data" ]]; then
+                	                rm -rf "/mnt/""$i"
+                	        fi
+                	done
+			log "Restoring original android data partition content"
+			mv /mnt/android_data/* /mnt/
+			rm -rf /mnt/android_data
+			sync
+			log "Uninstallation complete"
+			log "You may not reboot your system"
+		else
+			log "Directory android_data does not exist on the data partition, skipping uninstall"
+		fi
+
+	else
+		echo "Unknown Linux Tablet Tools command"
+	fi
+	sync
+	umount /mnt
+	
+
+	
+#############################################################
+
+	exec sh -i -l
+else
+	warn "$action has failed. To debug this issue add \"rd.shell rd.debug\" to the kernel command line."
+	exit 1
+fi
+
+/bin/rm -f -- /.console_lock
+
+exit 0
+
