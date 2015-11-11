@@ -1,3 +1,7 @@
+#!/bin/bash
+
+. ./check.sh
+
 CMDLINE=""
 if [[ ! -z $1 ]]; then
 	CMDLINE="--cmdline $1"
@@ -6,6 +10,7 @@ fi
 
 # Speed up during development by skipping the unpack step
 # unpack command
+[[ ! -d tmp ]] && mkdir tmp
 tar -xjf prebuilt/initramfs-installer.tar.bz2 -C tmp/
 
 # Copy scripts
