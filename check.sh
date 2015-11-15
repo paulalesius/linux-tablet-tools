@@ -9,3 +9,5 @@ if [[ ! -f external/mkbootimg.git/mkbootimg ]]; then
 	echo "mkbootimg tool does not exist, did you clone the repository with --recursive?"
 	exit 1
 fi
+
+

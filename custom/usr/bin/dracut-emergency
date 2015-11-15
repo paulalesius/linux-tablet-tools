@@ -172,7 +172,10 @@ if getargbool 1 rd.shell -d -y rdshell || getarg rd.break -d rdbreak; then
 			chroot /mnt /usr/sbin/lsmod > $DIAGNOSTICS_PATH/lsmod.txt
 			chroot /mnt /usr/bin/lsusb -vvvv > $DIAGNOSTICS_PATH/lsusb.txt
 			chroot /mnt cat /proc/bus/input/devices > $DIAGNOSTICS_PATH/proc_bus_input_devices.txt
+			cp -r /mnt/var/log $DIAGNOSTICS_PATH/var_log
 			ls -l $DIAGNOSTICS_PATH
+
+			chroot /mnt /usr/bin/lsusb
 
 			umount /mnt/proc
 			umount /mnt/dev
@@ -180,6 +183,26 @@ if getargbool 1 rd.shell -d -y rdshell || getarg rd.break -d rdbreak; then
 		else
 			log "Not performing diagnostics, maybe linux isn't installed.."
 		fi
+
+		sync
+
+		log "/dev"
+		ls /dev/
+
+		find /dev/ | grep watchdog
+
+		#cat /mnt/var/log/messages
+
+		#while true; do
+		#	clear
+		#	dmesg | tail -n 40
+		#	sleep .5
+		#done
+
+	elif [ "$LTTCMD" == "test" ]; then
+		
+		log "Searching for SYNA"
+		find /sys | grep SYNA
 
 	elif [ "$LTTCMD" == "verify" ]; then
 		
@@ -210,7 +233,7 @@ if getargbool 1 rd.shell -d -y rdshell || getarg rd.break -d rdbreak; then
 			
 			#
 			log "Installaing rootfs.tar.gz archive, this can take many minutes, please be patient"
-			tar --checkpoint=10000 -xf "$DATA_BACKUP_DIRECTORY/$ROOTFS_RELPATH" -C /mnt/
+			tar --checkpoint=15000 -xf "$DATA_BACKUP_DIRECTORY/$ROOTFS_RELPATH" -C /mnt/
 
 			#
 			echo -e "\n/dev/mmcblk0p14 / ext4 defaults,noatime,nodiratime 0 0\n" > /mnt/etc/fstab
@@ -226,7 +249,7 @@ if getargbool 1 rd.shell -d -y rdshell || getarg rd.break -d rdbreak; then
 			ls -lh /mnt
 
 			#
-			log "Installation complete, you may not safely reboot the system"
+			log "Installation complete, you may now safely reboot the system"
 		fi
 
 	elif [ "$LTTCMD" == "uninstall" ]; then
@@ -243,10 +266,13 @@ if getargbool 1 rd.shell -d -y rdshell || getarg rd.break -d rdbreak; then
                 	done
 			log "Restoring original android data partition content"
 			mv /mnt/android_data/* /mnt/
-			rm -rf /mnt/android_data
+			#rm -rf /mnt/android_data
+			log "Sleeping for 30 seconds"
+			sleep 30
 			sync
+			rm -rf /mnt/android_data
 			log "Uninstallation complete"
-			log "You may not reboot your system"
+			log "You may now reboot your system"
 		else
 			log "Directory android_data does not exist on the data partition, skipping uninstall"
 		fi

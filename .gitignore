@@ -3,3 +3,5 @@ prebuilt/bootx64.efi
 prebuilt/boot-installer.img
 prebuilt/boot-linux.img
 prebuilt/initramfs-installer.img
+**/*.swp
+

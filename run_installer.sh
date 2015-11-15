@@ -2,12 +2,6 @@
 
 . ./check.sh
 
-CMDLINE=""
-if [[ ! -z $1 ]]; then
-	CMDLINE="--cmdline $1"
-	echo "Command line specified: " + $CMDLINE
-fi
-
 # Speed up during development by skipping the unpack step
 # unpack command
 [[ ! -d tmp ]] && mkdir tmp
@@ -20,7 +14,7 @@ cp -r custom/* tmp/
 cd tmp/ && find . | cpio -R 0:0 -H newc -o | bzip2 -9 > ../prebuilt/initramfs-installer.img && cd -
 
 # Package boot.img
-external/mkbootimg.git/mkbootimg $CMDLINE --base 0x00100000 --kernel prebuilt/kernel --ramdisk prebuilt/initramfs-installer.img --dt prebuilt/dt.img -o prebuilt/boot-installer.img
+external/mkbootimg.git/mkbootimg --cmdline "nmi_watchdog=0 nomodeset i915.modeset=0 lttcmd=$1 panic=0" --base 0x00100000 --kernel prebuilt/kernel --ramdisk prebuilt/initramfs-installer.img --dt prebuilt/dt.img -o prebuilt/boot-installer.img
 
 # Boot
 fastboot flash osloader prebuilt/bootx64.efi
